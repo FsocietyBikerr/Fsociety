@@ -12,7 +12,7 @@ CORS(app)  # Разрешаем запросы с любых доменов
 logging.basicConfig(level=logging.INFO)
 
 # ====== НАСТРОЙКИ ======
-TELEGRAM_TOKEN = "8757264040:AAEQr6UPKMeaR_9PWv_Np5F-vLcXag2GyXc"   
+TELEGRAM_TOKEN = "8309575486:AAFEcAZ-QBmLxbgLfWRxlUtfKvG7JdAa2CA"   
 CHAT_ID = "8382511631"                       
 # ========================
 
